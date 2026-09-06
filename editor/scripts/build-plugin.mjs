@@ -1,6 +1,10 @@
 import { build } from 'esbuild'
-import { copyFile, stat } from 'node:fs/promises'
+import { copyFile, readFile, stat } from 'node:fs/promises'
 
+const editor = await readFile('dist/editor.html', 'utf8')
+if (/AIza[0-9A-Za-z_-]{35}|excalidraw-room-persistence/.test(editor)) {
+  throw new Error('Offline editor contains upstream Google/Firebase configuration; refusing to publish')
+}
 await copyFile('dist/editor.html', '../desktop/editor.html')
 
 await build({

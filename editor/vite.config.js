@@ -9,7 +9,11 @@ const embedExcalidrawFonts = {
   enforce: 'pre',
   transform(code, id) {
     if (!id.includes('/@excalidraw/excalidraw/dist/prod/')) return null
-    const next = code.replace(/(["'`])\.\/fonts\/([^"'`]+\.woff2)\1/g, (_match, quote, font) => {
+    // The published dependency includes its website's cloud configuration.
+    // Keep it out of our offline editor, including its Firebase client key.
+    const offline = code.replace(/\b(VITE_APP_(?:BACKEND_\w+|LIBRARY_\w+|PLUS_\w+|AI_BACKEND|WS_SERVER_URL|FIREBASE_CONFIG)):(["'`])[\s\S]*?\2/g,
+      (_match, name) => `${name}:${JSON.stringify(name === 'VITE_APP_FIREBASE_CONFIG' ? '{}' : '')}`)
+    const next = offline.replace(/(["'`])\.\/fonts\/([^"'`]+\.woff2)\1/g, (_match, quote, font) => {
       embeddedFonts += 1
       const data = readFileSync(resolve('node_modules/@excalidraw/excalidraw/dist/prod/fonts', font))
       return `${quote}data:font/woff2;base64,${data.toString('base64')}${quote}`
