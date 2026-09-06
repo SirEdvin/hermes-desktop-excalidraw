@@ -1,0 +1,22 @@
+{
+  "name": "hermes-desktop-excalidraw-editor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node scripts/build-plugin.mjs",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "esbuild": "0.28.2",
+    "vite": "8.2.2",
+    "vite-plugin-singlefile": "2.3.3"
+  },
+  "packageManager": "pnpm@10.33.3"
+}
