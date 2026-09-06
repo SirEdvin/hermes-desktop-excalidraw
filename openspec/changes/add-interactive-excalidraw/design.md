@@ -40,9 +40,9 @@ Alternative considered: a desktop-only plugin pointing at `excalidraw.com`. It i
 
 Alternative considered: configure the official Excalidraw MCP server. Hermes can discover its tools, but Hermes Desktop does not currently render MCP App resources as this persistent sidebar, and its checkpoint model would create a second source of truth.
 
-### Embed a self-contained editor in an isolated webview
+### Load a self-contained local editor in an isolated webview
 
-A build step will compile a pinned `@excalidraw/excalidraw` dependency into self-contained HTML and inject that HTML into the generated desktop plugin as a data URL. The runtime desktop plugin will continue to import only the three SDK-approved module specifiers. The Excalidraw runtime, styles, fonts, and workers needed by the editor will be included in the generated artifact.
+A build step will compile a pinned `@excalidraw/excalidraw` dependency into `desktop/editor.html` beside the generated `desktop/plugin.js`. The backend exposes only that fixed installed file URL, because Hermes evaluates runtime plugins from blob URLs and does not provide an SDK asset resolver. Keeping the editor separate also keeps `desktop/plugin.js` below Desktop's 16 MiB plugin-source limit. The runtime desktop plugin will continue to import only the three SDK-approved module specifiers. The Excalidraw runtime, styles, fonts, and workers needed by the editor will be included in the self-contained local HTML artifact.
 
 The pane will mount an Electron `webview`. A narrow guest API will expose load, export, dirty-state, and error operations. The host will call it through `executeJavaScript`; the guest will not receive access to the Hermes SDK, gateway credentials, or the parent DOM.
 
@@ -97,13 +97,13 @@ Alternative considered: WebSocket-only synchronization. It is faster but unsuppo
 
 ### Register a persistent, accessible pane toggle
 
-The desktop plugin will register a right-side pane and one SDK-native launcher action. The open state will use plugin storage so hot reloads and Desktop restarts preserve the user's choice. The control will have an accessible label and keyboard activation. Excalidraw keeps its own keyboard and accessibility behavior inside the webview.
+The desktop plugin will register a right-side hide-only pane. Hermes Desktop automatically provides one SDK-native command-palette toggle for that pane; the host layout store preserves its visible state across hot reloads and Desktop restarts. The command has an accessible label and keyboard activation. Excalidraw keeps its own keyboard and accessibility behavior inside the webview.
 
 The initial plugin will not add duplicate status-bar, sidebar-navigation, and command-palette entries. One launcher is sufficient; additional entry points can be added if usage shows they are needed.
 
 ## Risks / Trade-offs
 
-- [Generated `desktop/plugin.js` is large] → Keep source and generated artifact clearly separated, pin Excalidraw, and verify the artifact contains no external runtime URLs.
+- [`desktop/editor.html` is large] → Keep source and generated artifacts clearly separated, pin Excalidraw, and verify the local editor makes no external runtime requests while `desktop/plugin.js` remains below the host source limit.
 - [Electron `webview` behavior differs across Desktop platforms] → Exercise loading, resizing, keyboard input, and teardown on Linux first and add Windows/macOS verification before declaring those platforms supported.
 - [Excalidraw schema evolves] → Pin the editor version and reject unsupported document versions rather than guessing migrations.
 - [Polling delays agent updates by up to two seconds] → Accept for the initial version; add the existing `ctx.socket` accelerator only if measured latency is disruptive.
