@@ -1,9 +1,0 @@
-name: hermes-desktop-excalidraw
-version: 0.1.0
-description: Shared Excalidraw workspace for Hermes Desktop and agents
-author: SirEdvin
-license: MIT
-provides_tools:
-  - excalidraw_read_scene
-  - excalidraw_replace_scene
-toolset: excalidraw

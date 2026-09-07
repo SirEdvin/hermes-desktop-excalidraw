@@ -1,7 +1,6 @@
 html,
 body,
-#root,
-main {
+#root {
   width: 100%;
   height: 100%;
   margin: 0;
@@ -10,4 +9,32 @@ main {
 
 body {
   font-family: system-ui, sans-serif;
+  color-scheme: light dark;
+  background: Canvas;
+  color: CanvasText;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+#root > header {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: Canvas;
+  color: CanvasText;
+}
+
+#root > header p {
+  margin: 0;
+}
+
+#root > header button {
+  margin: 8px;
+}
+
+#root > main {
+  flex: 1;
+  min-height: 0;
 }

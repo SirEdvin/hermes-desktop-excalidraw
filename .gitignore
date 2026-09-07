@@ -1,6 +1,4 @@
-__pycache__/
-.pytest_cache/
-*.py[cod]
+
 editor/node_modules/
 editor/dist/
 editor/test-results/
