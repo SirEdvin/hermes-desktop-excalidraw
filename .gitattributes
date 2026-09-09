@@ -1,3 +1,3 @@
 # Preserve the generated vendor bundle verbatim; review its sources instead.
-desktop/editor.html -diff -whitespace linguist-generated=true
-desktop/plugin.js linguist-generated=true
+editor.html -diff -whitespace linguist-generated=true
+plugin.js linguist-generated=true
