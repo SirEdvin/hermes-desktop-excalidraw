@@ -136,8 +136,9 @@ test('canvas resizes in narrow and wide panes, in light and dark mode', async ({
     for (const width of [400, 1100]) {
       await page.setViewportSize({ width, height: 700 })
       await expect.poll(async () => Math.round((await page.locator('main').boundingBox()).width)).toBe(width)
+      // Excalidraw updates its canvas after the container's ResizeObserver fires.
+      await expect.poll(async () => (await page.locator('canvas').first().boundingBox()).width).toBe(width)
       const canvas = await page.locator('canvas').first().boundingBox()
-      expect(canvas.width).toBe(width)
       expect(canvas.height).toBeLessThanOrEqual(700)
     }
   }

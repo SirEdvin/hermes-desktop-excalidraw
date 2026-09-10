@@ -1,5 +1,5 @@
 import { _electron as electron, expect } from '@playwright/test'
-import { copyFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, writeFile, rename } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -105,6 +105,60 @@ try {
   await ready()
   await expect.poll(async () => (await guestScript(read))?.elements[0]?.id).toBe(saved.elements[0].id)
   checks.push('Real host workspace switching isolated and restored drawings')
+  const panel = page.locator('.hx-handoff')
+  await expect(panel).toHaveCount(1)
+  await panel.locator('summary').first().click()
+  const handoffDirectory = join(root, 'shared drawings — тест')
+  await mkdir(handoffDirectory)
+  // Only the native picker interaction is stubbed; all file IPC is real.
+  await app.evaluate(({ dialog }, directory) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] })
+  }, handoffDirectory)
+  await panel.getByRole('button', { name: 'Choose folder' }).click()
+  await expect(panel).toContainText(handoffDirectory)
+  await panel.getByRole('button', { name: 'Prepare handoff' }).click()
+  await expect(panel).toContainText('Input file verified')
+  await panel.getByRole('button', { name: 'Copy agent instructions' }).click()
+  await expect(panel).toContainText('Instructions copied')
+  const copied = await app.evaluate(({ clipboard }) => clipboard.readText())
+  const input = JSON.parse(copied.match(/Read input \(JSON-quoted path\): (.+)/)[1])
+  const output = JSON.parse(copied.match(/Write a NEW output \(JSON-quoted path\): (.+)/)[1])
+  const exported = JSON.parse(await readFile(input, 'utf8'))
+  expect(exported.elements[0].id).toBe(saved.elements[0].id)
+  expect(output).not.toBe(input)
+  // Simulate an agent using ordinary filesystem tools, not a plugin back door.
+  const agentScene = { ...exported, elements: [
+    { ...exported.elements[0], backgroundColor: '#a5d8ff' },
+    { id: 'agent-label', type: 'text', x: 100, y: 100, width: 220, height: 25, text: 'Agent file handoff works', fontSize: 20, fontFamily: 1 }
+  ] }
+  await writeFile(`${output}.tmp`, JSON.stringify(agentScene))
+  await rename(`${output}.tmp`, output)
+  await panel.getByRole('button', { name: 'Read result' }).click()
+  await expect(panel.getByRole('img', { name: 'Preview of the agent drawing result' })).toBeVisible()
+  await panel.screenshot({ path: join(root, 'handoff-preview.png') })
+  expect((await guestScript(read)).elements.length).toBe(1)
+  await panel.getByRole('button', { name: 'Apply result' }).click()
+  await expect(panel).toContainText('Result applied and saved')
+  await expect.poll(async () => (await guestScript(read))?.elements.length).toBe(2)
+  expect((await guestScript(read)).elements[1].text).toBe('Agent file handoff works')
+  expect(await readFile(input, 'utf8')).toBe(JSON.stringify(exported, null, 2))
+  checks.push('Native file export/readback, clipboard instructions, agent-style file edit, preview and explicit apply passed')
+  // This handoff now differs from the live drawing: replacement needs consent.
+  await panel.getByRole('button', { name: 'Read result' }).click()
+  await expect(panel.getByRole('checkbox')).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Apply result' })).toBeDisabled()
+  await panel.getByRole('checkbox').check()
+  await expect(panel.getByRole('button', { name: 'Apply result' })).toBeEnabled()
+  await panel.getByRole('button', { name: 'Discard preview' }).click()
+  checks.push('Changed local drawing requires explicit replacement consent')
+  await page.screenshot({ path: join(root, 'handoff.png') })
+  await toggle(page)
+  await toggle(page)
+  await ready()
+  await page.locator('.hx-handoff > summary').click()
+  await expect(page.locator('.hx-handoff')).toContainText(output)
+  await expect.poll(async () => (await guestScript(read))?.elements.length).toBe(2)
+  checks.push('Handoff metadata and applied result recovered after pane close/reopen')
   await page.reload()
   await ready()
   expect((await guestScript(read)).elements[0].id).toBe(saved.elements[0].id)
@@ -116,6 +170,11 @@ try {
   await ready()
   expect((await guestScript(read)).elements[0].id).toBe(saved.elements[0].id)
   checks.push('Full Electron restart restored the open pane and drawing')
+  expect((await guestScript(read)).elements[1].text).toBe('Agent file handoff works')
+  await page.locator('.hx-handoff > summary').click()
+  await expect(page.locator('.hx-handoff')).toContainText(output)
+  expect(await guestScript('Boolean(document.querySelector("a[download=\\"before-agent.excalidraw\\"]"))')).toBe(true)
+  checks.push('Full restart retained handoff paths, applied scene and recovery download')
   const width = await page.locator('webview[aria-label="Excalidraw editor"]').evaluate(element => element.clientWidth)
   await expect.poll(async () => Math.abs(await guestScript('innerWidth') - width)).toBeLessThanOrEqual(1)
   expect(await guestScript('document.querySelector("[data-testid=main-menu-trigger]").getBoundingClientRect().bottom <= innerHeight')).toBe(true)

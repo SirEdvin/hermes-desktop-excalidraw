@@ -18,7 +18,7 @@ export default {
         title: 'Excalidraw',
         dock: { pane: 'workspace', pos: 'right' },
         minWidth: '320px',
-        render: () => <ExcalidrawPane />,
+        render: () => <ExcalidrawPane storage={ctx.storage} />,
         onClose: () => {
           close = null
           if (!disposing) ctx.storage.set('pane-open', false)
