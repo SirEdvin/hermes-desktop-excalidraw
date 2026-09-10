@@ -68,6 +68,10 @@ async function toggle(page) {
     registry.getArea(PALETTE_AREA).find(item => item.data?.id === 'hermes-desktop-excalidraw.toggle').data.run()
   })())
 }
+async function dismissUpdateNotice(page) {
+  const notice = page.getByRole('region', { name: 'Notifications' }).getByRole('status').filter({ hasText: 'Update ready' })
+  if (await notice.isVisible()) await notice.getByRole('button', { name: /dismiss/i }).click()
+}
 try {
   await expect.poll(async () => {
     try { return (await fetch(`${env.HERMES_DESKTOP_REMOTE_URL}/api/status`)).ok } catch { return false }
@@ -181,6 +185,58 @@ try {
   checks.push('Native guest viewport matches pane bounds and keeps its menu visible')
   const png = await app.evaluate(async ({ webContents }) => (await webContents.getAllWebContents().find(view => view.getType() === 'webview').capturePage()).toPNG().toString('base64'))
   await writeFile(join(root, 'editor.png'), Buffer.from(png, 'base64'))
+  const manualBeforeLive = await guestScript(read)
+  await app.evaluate(({ dialog }, path) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] })
+  }, output)
+  await dismissUpdateNotice(page)
+  await page.getByRole('button', { name: 'Open live file' }).click()
+  const liveImage = () => page.getByRole('img', { name: 'Live Excalidraw drawing' })
+  await expect(liveImage()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('button', { name: 'Apply result' })).toHaveCount(0)
+  const firstImage = await liveImage().getAttribute('src')
+  const liveScene = { ...agentScene, elements: [
+    ...agentScene.elements.filter(element => element.type !== 'text'),
+    { ...agentScene.elements[1], text: 'Live project file updates automatically', width: 440 },
+    { id: 'live-box', type: 'rectangle', x: 100, y: 150, width: 220, height: 80, backgroundColor: '#b2f2bb' }
+  ] }
+  const liveRaw = JSON.stringify(liveScene)
+  await writeFile(`${output}.tmp`, liveRaw)
+  await rename(`${output}.tmp`, output)
+  await expect.poll(() => liveImage().getAttribute('src'), { timeout: 15_000 }).not.toBe(firstImage)
+  await expect(page.getByRole('status').filter({ hasText: 'Read-only' })).toContainText('3 elements')
+  const updatedImage = await liveImage().getAttribute('src')
+  await writeFile(output, '{incomplete')
+  await expect(page.locator('.hx-live-view [role=alert]')).toContainText('not complete JSON', { timeout: 15_000 })
+  expect(await liveImage().getAttribute('src')).toBe(updatedImage)
+  await writeFile(output, liveRaw)
+  await expect(page.locator('.hx-live-view [role=alert]')).toHaveCount(0, { timeout: 15_000 })
+  expect(await guestScript(read)).toEqual(manualBeforeLive)
+  expect(await readFile(output, 'utf8')).toBe(liveRaw)
+  await page.screenshot({ path: join(root, 'live-file.png') })
+  checks.push('Read-only native file view refreshed after atomic agent update, retained its image during partial JSON, recovered automatically and left source/manual drawing unchanged')
+  await page.evaluate(workspace => window.__excalidrawCheck = import('/src/store/session.ts').then(module => module.setCurrentCwd(workspace)), otherWorkspace)
+  await ready()
+  await expect(liveImage()).toHaveCount(0)
+  await page.evaluate(workspace => window.__excalidrawCheck = import('/src/store/session.ts').then(module => module.setCurrentCwd(workspace)), originalWorkspace)
+  await expect(liveImage()).toBeVisible({ timeout: 20_000 })
+  await toggle(page)
+  await expect(liveImage()).toHaveCount(0)
+  await toggle(page)
+  await expect(liveImage()).toBeVisible({ timeout: 20_000 })
+  await page.reload()
+  await expect(liveImage()).toBeVisible({ timeout: 20_000 })
+  await app.close()
+  app = null
+  page = await launch()
+  await expect(liveImage()).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('.hx-live-path')).toHaveText(output)
+  expect(await readFile(output, 'utf8')).toBe(liveRaw)
+  await dismissUpdateNotice(page)
+  await page.getByRole('button', { name: 'Return to editor' }).click()
+  await ready()
+  expect(await guestScript(read)).toEqual(manualBeforeLive)
+  checks.push('Live file selection stayed scoped across workspace changes and recovered through pane closure, renderer reload and full Electron restart without replacing the manual canvas')
   await writeFile(join(root, 'verification.json'), JSON.stringify({ checks, install, pluginBackend: 'none' }, null, 2))
   console.log(JSON.stringify({ checks, artifacts: root }, null, 2))
 } finally {

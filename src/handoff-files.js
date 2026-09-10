@@ -8,7 +8,8 @@ export function requireFiles(api) {
 
 export async function readText(api, path) {
   const result = await api.readFileText(path)
-  if (result?.truncated) throw new Error('File is too large and was truncated by Desktop. The handoff limit is 512 KiB.')
+  if (result?.truncated) throw new Error('File is too large and was truncated by Desktop. The file preview limit is 512 KiB.')
+  if (result?.binary) throw new Error('Expected an Excalidraw JSON text file, not a binary file.')
   if (typeof result?.text !== 'string') throw new Error('Desktop could not read this file.')
   checkSize(result.text)
   return result.text
