@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build && node scripts/build-plugin.mjs",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:unit": "node --test tests/*.unit.test.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",

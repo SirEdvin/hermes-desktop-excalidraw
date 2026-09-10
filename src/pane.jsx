@@ -1,9 +1,10 @@
 import { host, useValue } from '@hermes/plugin-sdk'
 import { useEffect, useState } from 'react'
+import { HandoffPanel } from './handoff-panel.jsx'
 
 const ID = 'hermes-desktop-excalidraw'
 
-export function ExcalidrawPane() {
+export function ExcalidrawPane({ storage }) {
   const workspace = useValue(host.state.cwd)
   const profile = useValue(host.state.profile)
   const scope = JSON.stringify([profile, workspace])
@@ -39,6 +40,7 @@ export function ExcalidrawPane() {
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Excalidraw workspace">
+      <HandoffPanel key={`handoff:${scope}`} webview={webview} scope={scope} workspace={workspace} storage={storage} />
       {error && <p role="alert" className="p-3 text-sm text-(--ui-text-secondary)">{error}</p>}
       {!url && !error && <p role="status" className="p-3 text-sm">Loading Excalidraw…</p>}
       {url && (

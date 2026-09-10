@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Excalidraw, MainMenu, serializeAsJSON } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import './styles.css'
+import { installHandoff } from './handoff.js'
 
 const storageKey = `hermes.excalidraw.scene:${location.hash.slice(1) || 'default'}`
 
@@ -24,7 +25,27 @@ function Editor() {
   const [initial, setInitial] = useState(readDrawing)
   const [theme, setTheme] = useState('light')
   const [saveError, setSaveError] = useState(false)
+  const [api, setApi] = useState(null)
+  const [backup, setBackup] = useState(() => {
+    try { return localStorage.getItem(`${storageKey}:before-agent`) } catch { return null }
+  })
   const lastSaved = useRef(initial.raw)
+  const save = useCallback(raw => {
+    localStorage.setItem(storageKey, raw)
+    lastSaved.current = raw
+    setSaveError(false)
+  }, [])
+
+  React.useEffect(() => {
+    if (!api || initial.error) return
+    return installHandoff({
+      api, scope: location.hash.slice(1), save,
+      backup: raw => {
+        localStorage.setItem(`${storageKey}:before-agent`, raw)
+        setBackup(raw)
+      }
+    })
+  }, [api, initial.error, save])
   const onChange = useCallback((elements, appState, files) => {
     try {
       const next = serializeAsJSON(elements, appState, files, 'local')
@@ -63,9 +84,10 @@ function Editor() {
         ) : saveError ? (
           <p role="alert">Local save failed. Keep this pane open and use the menu to save a file before closing or switching workspaces.</p>
         ) : <p role="status">Saved on this device · use the menu to save a file</p>}
+        {backup && <a download="before-agent.excalidraw" href={`data:application/json;charset=utf-8,${encodeURIComponent(backup)}`}>Download drawing before last agent result</a>}
       </header>
       {!initial.error && <main aria-label="Excalidraw canvas">
-        <Excalidraw initialData={{ ...initial.scene, scrollToContent: true }} onChange={onChange} theme={theme}>
+        <Excalidraw excalidrawAPI={setApi} initialData={{ ...initial.scene, scrollToContent: true }} onChange={onChange} theme={theme}>
           <MainMenu>
             <MainMenu.DefaultItems.LoadScene />
             <MainMenu.DefaultItems.SaveToActiveFile />
