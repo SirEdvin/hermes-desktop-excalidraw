@@ -13,4 +13,13 @@
 
 - [x] 3.1 Extend isolated Linux Desktop verification to select a real file, modify it using ordinary filesystem tools and observe automatic image updates without handoff/apply; verify partial-write recovery, unchanged source bytes from viewer operations, manual-canvas preservation and restart recovery, saving screenshots outside the repository.
 - [x] 3.2 Document open-once live viewing, agent file-edit example, refresh cadence and native/shared-path limits; rebuild root assets and verify build, complete unit/browser suite, isolated Desktop harness and strict OpenSpec validation pass.
-- [ ] 3.3 Review the scoped diff, commit/push on the new branch and open the implementation PR when authorized; verify remote head and PR state and report actual test results and unverified platforms.
+- [x] 3.3 Review the scoped diff, commit/push on the new branch and open the implementation PR when authorized; verify remote head and PR state and report actual test results and unverified platforms.
+
+## Verification outcome
+
+- Build passed; distributed root assets rebuilt.
+- Unit suite: 9 passed. Browser suite: 29 passed.
+- Isolated Linux Desktop harness passed native live-file refresh, partial-write recovery, source/manual-canvas preservation and scoped pane/workspace/restart recovery. Latest artifacts: `/tmp/excalidraw-desktop-aJxNtu` (outside the repository).
+- Strict OpenSpec validation and whitespace checks passed.
+- PR: https://github.com/SirEdvin/hermes-desktop-excalidraw/pull/6 — open against main; remote implementation head verified; no hosted checks reported at verification.
+- macOS/Windows and a live model-driven drawing turn remain unverified. The harness uses real filesystem edits and native file IPC with only picker interaction stubbed.
