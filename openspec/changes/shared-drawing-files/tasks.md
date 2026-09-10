@@ -14,4 +14,14 @@
 - [x] 3.1 Extend isolated Desktop verification to export a real snapshot, edit the output via ordinary filesystem tools, preview/apply it, and recover it after restart; verify no Python plugin or separate service is installed for Excalidraw and record actual test output.
 - [x] 3.2 Document the copy/paste handoff workflow, shared-filesystem limitation, native limits and update procedure; verify instructions against the isolated end-to-end check.
 - [x] 3.3 Rebuild root plugin.js/editor.html and run the full browser suite plus handoff tests; verify generated artifacts contain the feature and existing offline import/export remains passing.
-- [ ] 3.4 Review the scoped diff and open the implementation PR on feat/shared-drawing-files when authorized; verify remote branch/PR state and report any remaining platform verification gaps.
+- [x] 3.4 Review the scoped diff and open the implementation PR on feat/shared-drawing-files when authorized; verify remote branch/PR state and report any remaining platform verification gaps.
+
+## Verification outcome
+
+- `pnpm build`: passed; distributed root assets rebuilt.
+- `pnpm test:unit`: 9 passed.
+- `pnpm test:browser`: 17 passed.
+- Isolated Linux Desktop verification: passed native filesystem/clipboard handoff, preview/apply, conflict consent, workspace/pane lifecycle and restart recovery. The folder picker is stubbed; no live model call was made.
+- `openspec validate shared-drawing-files --strict`: passed.
+- PR: https://github.com/SirEdvin/hermes-desktop-excalidraw/pull/5 (open against main; no hosted checks reported at verification).
+- macOS and Windows remain unverified. Same-path shared filesystem access is required for remote sessions.
