@@ -9,6 +9,7 @@ A desktop-only Excalidraw pane for Hermes. No Python plugin, backend routes, age
 - Local autosave scoped to workspace and profile, retained across pane closure and restart
 - Standard Excalidraw file import/export and image export
 - Light/dark canvas and resizable pane
+- Read-only live file view: open one `.excalidraw` file and automatically refresh its image when an agent updates it
 - Agent file handoff: copy instructions for Hermes, preview its result, and explicitly apply it without installing backend code
 
 Requires a current Hermes Desktop exposing `host.openWorkspace` and the native `window.hermesDesktop.desktopPluginsRoot()` API. The editor loads locally and makes no backend calls. Hermes itself still has its normal startup requirements. Linux is the verification platform; macOS and Windows are not verified.
@@ -42,7 +43,19 @@ Enable **Hermes Desktop Excalidraw** in Desktop's **Settings → Plugins**; run 
 
 Open the command palette with **Ctrl+K**, select **Excalidraw: toggle drawing pane**, and press Enter. The same command closes the pane even when it is the last tab in its group. Open/closed state survives hot reload and restart. The initial position is to the right of the conversation; drag its divider to resize.
 
-The pane also works without an open workspace. Switching workspace/profile selects a separate local drawing; it does not read or write workspace files automatically.
+The pane also works without an open workspace. Switching workspace/profile selects a separate local drawing and restores that scope's selected live file, if any. It does not discover project files or write to the selected live file.
+
+## Live drawings from an agent
+
+1. Ask your agent to create a standard `.excalidraw` file in your project using its ordinary file tools. For example: **“Draw this project's architecture in `docs/architecture.excalidraw`. Use labeled shapes and arrows. Write complete Excalidraw JSON, preferably through a temporary file and rename.”**
+2. In the Excalidraw pane, click **Open live file** and select that file. The picker starts in the current workspace (or the previously selected path).
+3. Ask the agent to update the same file. The read-only image refreshes automatically: the plugin checks every **2 seconds** while live view is open. No handoff instructions, output-file pairs, or Apply button are needed.
+
+The plugin never writes back to the viewed file or replaces your manual canvas. **Return to editor** stops live checks and reveals your previous manual drawing; **Open live file** can select a different file. Path and view selection are remembered per profile/workspace across pane closure and restart. On reopening, the current file is read again rather than restoring a cached image.
+
+During incomplete JSON, missing files, oversized data or rendering errors, the last valid image for that file remains visible with a status message. Checks continue, so a later valid update recovers automatically. A valid empty drawing clears the previous image. Switching to another file or workspace never displays the old file's image under the new path.
+
+Requires native Desktop `selectPaths` and `readFileText` support. Files must fit **512 KiB UTF-8 JSON** and **2,000 elements**, including restored scene data. Supported content is the same as the handoff limits below. Desktop and the agent must access the **same exact filesystem paths**; the plugin does not mount remote filesystems or translate paths. This renders an image for you, not automatic screenshot feedback to the agent. The manual editor and optional handoff workflow remain separate.
 
 ## Drawing with a Hermes session
 
@@ -93,7 +106,7 @@ pnpm test:unit
 pnpm test:browser
 ```
 
-Unit tests cover file safety and the scoped host/guest transport. Browser tests exercise offline drawing, reload/workspace recovery, file import/export, storage failures, damaged data, handoff preview/application, and pane resizing. The handoff UI contract tests use explicit native/SDK doubles for keyboard, clipboard-error, late-read, and responsive checks. Live Desktop verification uses real native file/clipboard APIs with a disposable home and user-data directory, not the normal Desktop session.
+Unit tests cover file safety and the scoped host/guest transport. Browser tests exercise offline drawing, reload/workspace recovery, file import/export, storage failures, damaged data, handoff preview/application, and pane resizing. Live-file tests use the real React Query implementation (a test-only dependency; production uses the Desktop SDK) with native/renderer doubles, plus the real Excalidraw renderer in separate tests. They cover automatic updates, unchanged files, failure recovery, serialization of slow operations, cancellation, keyboard controls and responsive layouts. Live Desktop verification uses real native file/clipboard APIs with a disposable home and user-data directory, not the normal Desktop session.
 
 For the live check, use a built Hermes source checkout with its development renderer running on port 5174:
 
@@ -102,4 +115,4 @@ EXCALIDRAW_ISOLATED_TEST=1 HERMES_SOURCE=/path/to/hermes-agent \
   xvfb-run -a node scripts/verify-desktop.mjs
 ```
 
-Run from `editor/`. This Linux harness launches and stops its own isolated Hermes core backend and Electron process. It installs only `plugin.js` and `editor.html`, with no Python plugin. It tests real file export/readback, clipboard instructions, an agent-style edit using ordinary filesystem operations, preview/application, conflict consent, and restart recovery. Only the native folder picker is stubbed; this is not a live model call. Results and screenshots are saved under a printed `/tmp/excalidraw-desktop-*` directory. Native guest captures avoid Chromium's webview-compositing artifacts in whole-window screenshots.
+Run from `editor/`. This Linux harness launches and stops its own isolated Hermes core backend and Electron process. It installs only `plugin.js` and `editor.html`, with no Python plugin. It tests real file export/readback, clipboard instructions, an agent-style edit using ordinary filesystem operations, preview/application, conflict consent, and restart recovery. It also selects a live file, checks automatic refresh after an atomic update and recovery after a partial write, then checks source/manual-canvas preservation and scoped selection recovery through workspace switches and restart. Only native picker interaction is stubbed; this is not a live model call. Results and screenshots are saved under a printed `/tmp/excalidraw-desktop-*` directory. Native guest captures avoid Chromium's webview-compositing artifacts in whole-window screenshots.

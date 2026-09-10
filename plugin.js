@@ -3,7 +3,7 @@ import { host as host2, PALETTE_AREA } from "@hermes/plugin-sdk";
 
 // ../src/pane.jsx
 import { host, useValue } from "@hermes/plugin-sdk";
-import { useEffect as useEffect2, useState as useState2 } from "react";
+import { useEffect as useEffect3, useState as useState3 } from "react";
 
 // ../src/handoff-panel.jsx
 import { Button, Textarea } from "@hermes/plugin-sdk";
@@ -18,7 +18,7 @@ var point = (value) => Array.isArray(value) && value.length === 2 && value.every
 var arrowheads = ["arrow", "bar", "dot", "circle", "circle_outline", "triangle", "triangle_outline", "diamond", "diamond_outline", "crowfoot_one", "crowfoot_many", "crowfoot_one_or_many"];
 function checkSize(raw) {
   if (typeof raw !== "string" || new TextEncoder().encode(raw).length > MAX_SCENE_BYTES) {
-    throw new Error("Drawing exceeds the 512 KiB handoff limit. Use the editor menu for manual file export instead.");
+    throw new Error("Drawing exceeds the 512 KiB file preview limit. Use the editor menu for manual import/export instead.");
   }
 }
 function checkTree(value, depth = 0) {
@@ -37,23 +37,23 @@ function parseScene(raw) {
   try {
     scene = JSON.parse(raw);
   } catch {
-    throw new Error("Result is not complete JSON. Wait for the agent to finish, then read it again.");
+    throw new Error("Drawing is not complete JSON. Wait for the agent to finish writing.");
   }
   if (!record(scene) || scene.type !== "excalidraw" || !Array.isArray(scene.elements)) throw new Error("Expected an Excalidraw drawing with an elements array.");
   checkTree(scene);
-  if (scene.elements.length > 2e3) throw new Error("Handoffs support at most 2,000 elements.");
+  if (scene.elements.length > 2e3) throw new Error("File previews support at most 2,000 elements.");
   if (scene.appState !== void 0 && !record(scene.appState)) throw new Error("Invalid drawing appState.");
   if (scene.files !== void 0 && !record(scene.files)) throw new Error("Invalid drawing files.");
   const files = scene.files || {};
   for (const [id, file] of Object.entries(files)) {
     if (!record(file) || file.id !== id || !/^image\/(png|jpeg|gif|webp)$/.test(file.mimeType) || typeof file.dataURL !== "string" || !file.dataURL.startsWith(`data:${file.mimeType};base64,`) || !/^[A-Za-z0-9+/]*={0,2}$/.test(file.dataURL.split(",")[1])) {
-      throw new Error("Handoffs accept embedded PNG, JPEG, GIF or WebP images only; remote images and SVG are not supported.");
+      throw new Error("File previews accept embedded PNG, JPEG, GIF or WebP images only; remote images and SVG are not supported.");
     }
   }
   const ids = /* @__PURE__ */ new Set();
   for (const element of scene.elements) {
     if (!record(element) || !types.has(element.type) || typeof element.id !== "string" || !element.id || ["__proto__", "constructor", "prototype"].includes(element.id) || ids.has(element.id)) {
-      throw new Error("Invalid or duplicate element. Remote embeds are not supported in handoffs.");
+      throw new Error("Invalid or duplicate element. Remote embeds are not supported in file previews.");
     }
     ids.add(element.id);
     for (const key of ["index", "frameId", "containerId", "name", "originalText"]) {
@@ -115,7 +115,8 @@ function requireFiles(api) {
 }
 async function readText(api, path) {
   const result = await api.readFileText(path);
-  if (result?.truncated) throw new Error("File is too large and was truncated by Desktop. The handoff limit is 512 KiB.");
+  if (result?.truncated) throw new Error("File is too large and was truncated by Desktop. The file preview limit is 512 KiB.");
+  if (result?.binary) throw new Error("Expected an Excalidraw JSON text file, not a binary file.");
   if (typeof result?.text !== "string") throw new Error("Desktop could not read this file.");
   checkSize(result.text);
   return result.text;
@@ -174,7 +175,7 @@ async function callScene(webview, scope, action, data = {}, active = () => true)
     const reply = await Promise.race([
       webview.executeJavaScript(script),
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("Drawing editor timed out. Read the result again before applying.")), 15e3);
+        timer = setTimeout(() => reject(new Error("Drawing editor timed out.")), 15e3);
       })
     ]);
     if (!active()) throw new Error("Drawing scope changed or the pane closed.");
@@ -342,17 +343,137 @@ function HandoffPanel({ webview, scope, workspace, storage }) {
   ] });
 }
 
-// ../src/pane.jsx
+// ../src/live-file.jsx
+import { Button as Button2, useQuery } from "@hermes/plugin-sdk";
+import { useEffect as useEffect2, useRef as useRef2, useState as useState2 } from "react";
 import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
+var validPath = (path) => typeof path === "string" && /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(path) && !/[\u0000-\u001f]/.test(path) && /\.excalidraw$/i.test(path);
+function load2(storage, key) {
+  try {
+    const value = storage.get(key);
+    if (!value) return { path: "", enabled: false };
+    if (value.version !== 1 || !validPath(value.path) || typeof value.enabled !== "boolean") throw new Error("Invalid selection");
+    return value;
+  } catch {
+    return { path: "", enabled: false, error: "Could not restore the selected file. Open it again." };
+  }
+}
+function LiveImage({ path, scope, webview }) {
+  const last = useRef2(null);
+  const [instance] = useState2(() => crypto.randomUUID());
+  const { data, error } = useQuery({
+    queryKey: ["hermes-excalidraw-live", scope, path, instance],
+    enabled: Boolean(webview),
+    networkMode: "always",
+    retry: false,
+    gcTime: 0,
+    staleTime: 0,
+    refetchInterval: 2e3,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: async ({ signal }) => {
+      const active = () => !signal.aborted;
+      if (typeof window.hermesDesktop?.readFileText !== "function") throw new Error("Update Hermes Desktop: native file reading is required.");
+      const raw = await readText(window.hermesDesktop, path);
+      if (!active()) throw new Error("File view closed.");
+      if (last.current?.raw === raw) return last.current;
+      parseScene(raw);
+      const rendered = await callScene(webview, scope, "render", { raw }, active);
+      if (!active()) throw new Error("File view closed.");
+      last.current = { ...rendered, raw };
+      return last.current;
+    }
+  });
+  return /* @__PURE__ */ jsxs2("div", { className: "hx-live-view", "aria-label": "Read-only file view", children: [
+    /* @__PURE__ */ jsx2("p", { className: "hx-live-path", children: path }),
+    /* @__PURE__ */ jsxs2("p", { role: "status", children: [
+      "Read-only \xB7 checks every 2 seconds",
+      data ? ` \xB7 ${data.count} elements` : " \xB7 waiting for drawing\u2026"
+    ] }),
+    error && /* @__PURE__ */ jsxs2("p", { role: "alert", children: [
+      error.message,
+      " Keeping the last valid image, if available. Retrying automatically."
+    ] }),
+    /* @__PURE__ */ jsx2("div", { className: "hx-live-image", children: data?.image ? /* @__PURE__ */ jsx2("img", { src: data.image, alt: "Live Excalidraw drawing" }) : data && /* @__PURE__ */ jsx2("p", { children: "Empty drawing" }) })
+  ] });
+}
+function LiveFilePanel({ scope, workspace, storage, webview, children }) {
+  const key = `live-file:${scope}`;
+  const [selection, setSelection] = useState2(() => load2(storage, key));
+  const [error, setError] = useState2(selection.error || "");
+  const [choosing, setChoosing] = useState2(false);
+  const openButton = useRef2(null);
+  const alive = useRef2(true);
+  useEffect2(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const select = (next) => {
+    setSelection(next);
+    setError("");
+    try {
+      storage.set(key, next);
+      const saved = storage.get(key);
+      if (saved?.path !== next.path || saved.enabled !== next.enabled) throw new Error("Storage unavailable");
+    } catch {
+      setError("Desktop could not remember this selection. You can keep viewing, but may need to open the file again after restart.");
+    }
+  };
+  const choose = async () => {
+    setChoosing(true);
+    setError("");
+    try {
+      const api = window.hermesDesktop;
+      if (typeof api?.selectPaths !== "function" || typeof api?.readFileText !== "function") throw new Error("Update Hermes Desktop: native file selection and reading are required.");
+      const paths = await api.selectPaths({ title: "Open a live Excalidraw file", defaultPath: selection.path || workspace || void 0, directories: false, multiple: false, filters: [{ name: "Excalidraw drawings", extensions: ["excalidraw"] }] });
+      if (!alive.current || !paths?.length) return;
+      if (!validPath(paths[0])) throw new Error("Choose an absolute path to an .excalidraw file.");
+      select({ version: 1, path: paths[0], enabled: true });
+    } catch (failure) {
+      if (alive.current) setError(String(failure.message || failure));
+    } finally {
+      if (alive.current) setChoosing(false);
+    }
+  };
+  return /* @__PURE__ */ jsxs2("div", { className: "hx-file-panel", children: [
+    /* @__PURE__ */ jsx2("style", { children: `
+        .hx-file-panel, .hx-manual { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
+        .hx-manual[hidden] { display:none; }
+        .hx-live-toolbar { display:flex; flex-wrap:wrap; gap:.5rem; padding:.5rem .75rem; border-bottom:1px solid var(--ui-stroke-secondary); }
+        .hx-live-view { display:flex; flex-direction:column; flex:1; min-height:0; padding:.75rem; gap:.5rem; overflow:auto; color:var(--ui-text-primary); }
+        .hx-live-view p, .hx-live-error { margin:0; font-size:.75rem; overflow-wrap:anywhere; }
+        .hx-live-path, .hx-live-view [role=status] { color:var(--ui-text-secondary); }
+        .hx-live-error { padding:.5rem .75rem; color:var(--ui-text-primary); }
+        .hx-live-image { display:flex; flex:1; min-height:0; align-items:center; justify-content:center; }
+        .hx-live-image img { display:block; width:100%; height:100%; object-fit:contain; }
+      ` }),
+    /* @__PURE__ */ jsxs2("div", { className: "hx-live-toolbar", children: [
+      /* @__PURE__ */ jsx2(Button2, { ref: openButton, variant: "secondary", size: "sm", disabled: choosing, onClick: choose, children: "Open live file" }),
+      selection.enabled && /* @__PURE__ */ jsx2(Button2, { variant: "secondary", size: "sm", disabled: choosing, onClick: () => {
+        select({ ...selection, enabled: false });
+        openButton.current?.focus();
+      }, children: "Return to editor" })
+    ] }),
+    error && /* @__PURE__ */ jsx2("p", { className: "hx-live-error", role: "alert", children: error }),
+    selection.enabled && /* @__PURE__ */ jsx2(LiveImage, { path: selection.path, scope, webview }, selection.path),
+    /* @__PURE__ */ jsx2("div", { className: "hx-manual", hidden: selection.enabled, children })
+  ] });
+}
+
+// ../src/pane.jsx
+import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 var ID = "hermes-desktop-excalidraw";
 function ExcalidrawPane({ storage }) {
   const workspace = useValue(host.state.cwd);
   const profile = useValue(host.state.profile);
   const scope = JSON.stringify([profile, workspace]);
-  const [url, setUrl] = useState2("");
-  const [error, setError] = useState2("");
-  const [webview, setWebview] = useState2(null);
-  useEffect2(() => {
+  const [url, setUrl] = useState3("");
+  const [error, setError] = useState3("");
+  const [webview, setWebview] = useState3(null);
+  useEffect3(() => {
     if (!webview) return;
     const failed = (event) => {
       if (event.errorCode !== -3) setError(`Editor failed to load: ${event.errorDescription}. Check that editor.html is installed beside plugin.js.`);
@@ -360,7 +481,7 @@ function ExcalidrawPane({ storage }) {
     webview.addEventListener("did-fail-load", failed);
     return () => webview.removeEventListener("did-fail-load", failed);
   }, [webview]);
-  useEffect2(() => {
+  useEffect3(() => {
     let cancelled = false;
     const locateEditor = async () => {
       try {
@@ -378,27 +499,29 @@ function ExcalidrawPane({ storage }) {
       cancelled = true;
     };
   }, []);
-  return /* @__PURE__ */ jsxs2("section", { className: "flex h-full min-h-0 flex-col", "aria-label": "Excalidraw workspace", children: [
-    /* @__PURE__ */ jsx2(HandoffPanel, { webview, scope, workspace, storage }, `handoff:${scope}`),
-    error && /* @__PURE__ */ jsx2("p", { role: "alert", className: "p-3 text-sm text-(--ui-text-secondary)", children: error }),
-    !url && !error && /* @__PURE__ */ jsx2("p", { role: "status", className: "p-3 text-sm", children: "Loading Excalidraw\u2026" }),
-    url && /* @__PURE__ */ jsx2(
-      "webview",
-      {
-        src: `${url}#${encodeURIComponent(scope)}`,
-        title: "Excalidraw editor",
-        "aria-label": "Excalidraw editor",
-        webpreferences: "contextIsolation=yes, nodeIntegration=no, sandbox=yes",
-        className: "min-h-0 w-full flex-1",
-        ref: setWebview
-      },
-      scope
-    )
+  return /* @__PURE__ */ jsxs3("section", { className: "flex h-full min-h-0 flex-col", "aria-label": "Excalidraw workspace", children: [
+    error && /* @__PURE__ */ jsx3("p", { role: "alert", className: "p-3 text-sm text-(--ui-text-secondary)", children: error }),
+    !url && !error && /* @__PURE__ */ jsx3("p", { role: "status", className: "p-3 text-sm", children: "Loading Excalidraw\u2026" }),
+    /* @__PURE__ */ jsxs3(LiveFilePanel, { scope, workspace, storage, webview, children: [
+      /* @__PURE__ */ jsx3(HandoffPanel, { webview, scope, workspace, storage }, `handoff:${scope}`),
+      url && /* @__PURE__ */ jsx3(
+        "webview",
+        {
+          src: `${url}#${encodeURIComponent(scope)}`,
+          title: "Excalidraw editor",
+          "aria-label": "Excalidraw editor",
+          webpreferences: "contextIsolation=yes, nodeIntegration=no, sandbox=yes",
+          className: "min-h-0 w-full flex-1",
+          ref: setWebview
+        },
+        scope
+      )
+    ] }, `live:${scope}`)
   ] });
 }
 
 // ../src/plugin.jsx
-import { jsx as jsx3 } from "react/jsx-runtime";
+import { jsx as jsx4 } from "react/jsx-runtime";
 var ID2 = "hermes-desktop-excalidraw";
 var plugin_default = {
   id: ID2,
@@ -415,7 +538,7 @@ var plugin_default = {
         title: "Excalidraw",
         dock: { pane: "workspace", pos: "right" },
         minWidth: "320px",
-        render: () => /* @__PURE__ */ jsx3(ExcalidrawPane, { storage: ctx.storage }),
+        render: () => /* @__PURE__ */ jsx4(ExcalidrawPane, { storage: ctx.storage }),
         onClose: () => {
           close = null;
           if (!disposing) ctx.storage.set("pane-open", false);

@@ -8,7 +8,7 @@ const arrowheads = ['arrow', 'bar', 'dot', 'circle', 'circle_outline', 'triangle
 
 export function checkSize(raw) {
   if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > MAX_SCENE_BYTES) {
-    throw new Error('Drawing exceeds the 512 KiB handoff limit. Use the editor menu for manual file export instead.')
+    throw new Error('Drawing exceeds the 512 KiB file preview limit. Use the editor menu for manual import/export instead.')
   }
 }
 
@@ -26,10 +26,10 @@ function checkTree(value, depth = 0) {
 export function parseScene(raw) {
   checkSize(raw)
   let scene
-  try { scene = JSON.parse(raw) } catch { throw new Error('Result is not complete JSON. Wait for the agent to finish, then read it again.') }
+  try { scene = JSON.parse(raw) } catch { throw new Error('Drawing is not complete JSON. Wait for the agent to finish writing.') }
   if (!record(scene) || scene.type !== 'excalidraw' || !Array.isArray(scene.elements)) throw new Error('Expected an Excalidraw drawing with an elements array.')
   checkTree(scene)
-  if (scene.elements.length > 2000) throw new Error('Handoffs support at most 2,000 elements.')
+  if (scene.elements.length > 2000) throw new Error('File previews support at most 2,000 elements.')
   if (scene.appState !== undefined && !record(scene.appState)) throw new Error('Invalid drawing appState.')
   if (scene.files !== undefined && !record(scene.files)) throw new Error('Invalid drawing files.')
   const files = scene.files || {}
@@ -37,13 +37,13 @@ export function parseScene(raw) {
     if (!record(file) || file.id !== id || !/^image\/(png|jpeg|gif|webp)$/.test(file.mimeType) ||
         typeof file.dataURL !== 'string' || !file.dataURL.startsWith(`data:${file.mimeType};base64,`) ||
         !/^[A-Za-z0-9+/]*={0,2}$/.test(file.dataURL.split(',')[1])) {
-      throw new Error('Handoffs accept embedded PNG, JPEG, GIF or WebP images only; remote images and SVG are not supported.')
+      throw new Error('File previews accept embedded PNG, JPEG, GIF or WebP images only; remote images and SVG are not supported.')
     }
   }
   const ids = new Set()
   for (const element of scene.elements) {
     if (!record(element) || !types.has(element.type) || typeof element.id !== 'string' || !element.id || ['__proto__', 'constructor', 'prototype'].includes(element.id) || ids.has(element.id)) {
-      throw new Error('Invalid or duplicate element. Remote embeds are not supported in handoffs.')
+      throw new Error('Invalid or duplicate element. Remote embeds are not supported in file previews.')
     }
     ids.add(element.id)
     for (const key of ['index', 'frameId', 'containerId', 'name', 'originalText']) {

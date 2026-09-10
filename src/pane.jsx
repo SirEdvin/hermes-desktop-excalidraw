@@ -1,6 +1,7 @@
 import { host, useValue } from '@hermes/plugin-sdk'
 import { useEffect, useState } from 'react'
 import { HandoffPanel } from './handoff-panel.jsx'
+import { LiveFilePanel } from './live-file.jsx'
 
 const ID = 'hermes-desktop-excalidraw'
 
@@ -40,20 +41,22 @@ export function ExcalidrawPane({ storage }) {
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Excalidraw workspace">
-      <HandoffPanel key={`handoff:${scope}`} webview={webview} scope={scope} workspace={workspace} storage={storage} />
       {error && <p role="alert" className="p-3 text-sm text-(--ui-text-secondary)">{error}</p>}
       {!url && !error && <p role="status" className="p-3 text-sm">Loading Excalidraw…</p>}
-      {url && (
-        <webview
-          key={scope}
-          src={`${url}#${encodeURIComponent(scope)}`}
-          title="Excalidraw editor"
-          aria-label="Excalidraw editor"
-          webpreferences="contextIsolation=yes, nodeIntegration=no, sandbox=yes"
-          className="min-h-0 w-full flex-1"
-          ref={setWebview}
-        />
-      )}
+      <LiveFilePanel key={`live:${scope}`} scope={scope} workspace={workspace} storage={storage} webview={webview}>
+        <HandoffPanel key={`handoff:${scope}`} webview={webview} scope={scope} workspace={workspace} storage={storage} />
+        {url && (
+          <webview
+            key={scope}
+            src={`${url}#${encodeURIComponent(scope)}`}
+            title="Excalidraw editor"
+            aria-label="Excalidraw editor"
+            webpreferences="contextIsolation=yes, nodeIntegration=no, sandbox=yes"
+            className="min-h-0 w-full flex-1"
+            ref={setWebview}
+          />
+        )}
+      </LiveFilePanel>
     </section>
   )
 }

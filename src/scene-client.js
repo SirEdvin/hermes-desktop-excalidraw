@@ -8,7 +8,7 @@ export async function callScene(webview, scope, action, data = {}, active = () =
   try {
     const reply = await Promise.race([
       webview.executeJavaScript(script),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Drawing editor timed out. Read the result again before applying.')), 15000) })
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Drawing editor timed out.')), 15000) })
     ])
     if (!active()) throw new Error('Drawing scope changed or the pane closed.')
     if (!reply || reply.version !== 1 || reply.id !== request.id || reply.scope !== request.scope) throw new Error('The drawing editor is not ready or returned a stale response.')

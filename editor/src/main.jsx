@@ -37,9 +37,8 @@ function Editor() {
   }, [])
 
   React.useEffect(() => {
-    if (!api || initial.error) return
     return installHandoff({
-      api, scope: location.hash.slice(1), save,
+      api: initial.error ? null : api, scope: location.hash.slice(1), save,
       backup: raw => {
         localStorage.setItem(`${storageKey}:before-agent`, raw)
         setBackup(raw)

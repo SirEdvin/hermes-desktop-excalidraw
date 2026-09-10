@@ -1,10 +1,30 @@
 import { exportToBlob, restore, serializeAsJSON } from '@excalidraw/excalidraw'
 import { checkSize, parseScene } from '../../src/scene.js'
 
+function restoreScene(raw) {
+  const scene = restore(parseScene(raw), null, null, { repairBindings: true })
+  checkSize(serializeAsJSON(scene.elements, scene.appState, scene.files, 'local'))
+  return scene
+}
+
+async function renderScene(scene) {
+  const elements = scene.elements.filter(element => !element.isDeleted)
+  if (!elements.length) return { image: null, count: 0 }
+  const blob = await exportToBlob({ elements, appState: { ...scene.appState, exportBackground: true }, files: scene.files, maxWidthOrHeight: 1600 })
+  const image = await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('Could not render the drawing.'))
+    reader.readAsDataURL(blob)
+  })
+  return { image, count: elements.length }
+}
+
 // Called only by the host's fixed webview invocation, never by scene content.
 export function installHandoff({ api, scope, save, backup, target = window }) {
   let alive = true
   let generation = 0
+  let renderGeneration = 0
   let staged = null
   const snapshot = () => {
     const raw = serializeAsJSON(api.getSceneElements(), api.getAppState(), api.getFiles(), 'local')
@@ -15,27 +35,23 @@ export function installHandoff({ api, scope, save, backup, target = window }) {
     const response = { version: 1, id: request?.id, scope }
     try {
       if (!alive || request?.version !== 1 || request.scope !== scope || typeof request.id !== 'string' || request.id.length > 100) throw new Error('Invalid or stale drawing request.')
+      if (request.action === 'render') {
+        const turn = ++renderGeneration
+        const result = await renderScene(restoreScene(request.raw))
+        if (!alive || turn !== renderGeneration) throw new Error('Drawing rendering was cancelled.')
+        return { ...response, ok: true, result }
+      }
+      if (!api) throw new Error('The manual drawing is not available.')
       if (request.action === 'snapshot') return { ...response, ok: true, result: { raw: snapshot() } }
       if (request.action === 'preview') {
         const turn = ++generation
         staged = null
-        const parsed = parseScene(request.raw)
-        const scene = restore(parsed, null, null, { repairBindings: true })
-        checkSize(serializeAsJSON(scene.elements, scene.appState, scene.files, 'local'))
+        const scene = restoreScene(request.raw)
         const expected = snapshot()
-        let image = null
-        if (scene.elements.some(element => !element.isDeleted)) {
-          const blob = await exportToBlob({ elements: scene.elements.filter(element => !element.isDeleted), appState: { ...scene.appState, exportBackground: true }, files: scene.files, maxWidthOrHeight: 800 })
-          image = await new Promise((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result)
-            reader.onerror = () => reject(new Error('Could not render the preview.'))
-            reader.readAsDataURL(blob)
-          })
-        }
+        const rendered = await renderScene(scene)
         if (!alive || turn !== generation) throw new Error('Drawing preview was cancelled.')
         staged = { id: request.id, scene, expected }
-        return { ...response, ok: true, result: { image, expected, previewId: request.id, count: scene.elements.filter(element => !element.isDeleted).length } }
+        return { ...response, ok: true, result: { ...rendered, expected, previewId: request.id } }
       }
       if (request.action === 'apply') {
         if (!staged || staged.id !== request.previewId) throw new Error('Read the result again before applying it.')
